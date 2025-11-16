@@ -9,6 +9,7 @@ it uses sqlite3 for its database and i mean i *did* code it in js but the routes
 
 # tested versions
 - 1.0
+- 1.1
 
 # setting up
 ``git clone`` the repo then run ``npm install`` and then after that run ``node src/geometry.js``

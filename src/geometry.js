@@ -36,11 +36,35 @@ db.exec(`
     updatedAt INTEGER DEFAULT (strftime('%s', 'now'))
   );
   
+  CREATE TABLE IF NOT EXISTS comments (
+    commentID INTEGER PRIMARY KEY AUTOINCREMENT,
+    userName TEXT NOT NULL,
+    comment TEXT NOT NULL,
+    levelID INTEGER NOT NULL,
+    userID TEXT NOT NULL,
+    timeStamp INTEGER DEFAULT (strftime('%s', 'now')),
+    percent INTEGER DEFAULT 0,
+    likes INTEGER DEFAULT 0,
+    isSpam INTEGER DEFAULT 0
+  );
+  
+  CREATE TABLE IF NOT EXISTS actions_likes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    itemID INTEGER NOT NULL,
+    type INTEGER NOT NULL,
+    isLike INTEGER NOT NULL,
+    ip TEXT NOT NULL,
+    timestamp INTEGER DEFAULT (strftime('%s', 'now'))
+  );
+  
   CREATE INDEX IF NOT EXISTS idx_userName ON levels(userName);
   CREATE INDEX IF NOT EXISTS idx_udid ON levels(udid);
   CREATE INDEX IF NOT EXISTS idx_levelName_userName ON levels(levelName, userName);
   CREATE INDEX IF NOT EXISTS idx_createdAt ON levels(createdAt);
   CREATE INDEX IF NOT EXISTS idx_difficulty ON levels(difficulty);
+  CREATE INDEX IF NOT EXISTS idx_comments_levelID ON comments(levelID);
+  CREATE INDEX IF NOT EXISTS idx_comments_userID ON comments(userID);
+  CREATE INDEX IF NOT EXISTS idx_actions_likes_item ON actions_likes(itemID, type, ip);
 `);
 
 app.use(express.json());
@@ -729,6 +753,177 @@ app.get('/api/levels', (req, res) => {
   } catch (error) {
     console.error('error getting levels:', error);
     res.json({ error: 'internal server error' });
+  }
+});
+
+app.post('*splat/database/uploadGJComment.php', (req, res) => {
+  try {
+    const { udid, userName, levelID, comment, percent } = req.body;
+    
+    if (!levelID || !comment || !userName) {
+      console.log('missing required fields for comment');
+      res.send('-1');
+      return;
+    }
+
+    console.log(`uploading comment for level ${levelID} by ${userName}`);
+
+    const uploadDate = Math.floor(Date.now() / 1000);
+    const userID = udid || 'guest';
+    const percentValue = parseInt(percent) || 0;
+
+    const stmt = db.prepare(`
+      INSERT INTO comments (userName, comment, levelID, userID, timeStamp, percent)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `);
+    
+    const result = stmt.run(
+      userName,
+      comment,
+      parseInt(levelID),
+      userID,
+      uploadDate,
+      percentValue
+    );
+
+    if (result.changes > 0) {
+      console.log(`comment created with ID: ${result.lastInsertRowid}`);
+      res.send('1');
+    } else {
+      res.send('-1');
+    }
+  } catch (error) {
+    console.error('error uploading comment:', error);
+    res.send('-1');
+  }
+});
+
+app.post('*splat/database/getGJComments.php', (req, res) => {
+  try {
+    const { levelID, page, count, mode } = req.body;
+    
+    if (!levelID) {
+      console.log('missing levelID');
+      res.send('-1');
+      return;
+    }
+
+    const pageNum = parseInt(page) || 0;
+    const limit = parseInt(count) || 10;
+    const offset = pageNum * limit;
+    const sortColumn = mode === '1' ? 'likes' : 'commentID';
+
+    console.log(`getting comments for level ${levelID}, page ${pageNum}`);
+
+    const countQuery = db.prepare('SELECT COUNT(*) as count FROM comments WHERE levelID = ?');
+    const totalComments = countQuery.get(parseInt(levelID)).count;
+
+    if (totalComments === 0) {
+      res.send('-2');
+      return;
+    }
+
+    const stmt = db.prepare(`
+      SELECT commentID, userName, comment, userID, timeStamp, percent, likes, isSpam
+      FROM comments
+      WHERE levelID = ?
+      ORDER BY ${sortColumn} DESC
+      LIMIT ? OFFSET ?
+    `);
+    
+    const comments = stmt.all(parseInt(levelID), limit, offset);
+
+    if (comments.length === 0) {
+      res.send('-2');
+      return;
+    }
+
+    const commentStrings = comments.map(c => {
+      const uploadDate = new Date(c.timeStamp * 1000).toLocaleDateString('en-GB', {
+        day: '2-digit',
+        month: '2-digit', 
+        year: 'numeric'
+      }).replace(/\//g, '/') + ' ' + new Date(c.timeStamp * 1000).toLocaleTimeString('en-GB', {
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false
+      }).replace(':', '.');
+
+      return `2~${c.comment}~3~${c.userID}~4~${c.likes}~5~0~7~${c.isSpam}~9~${uploadDate}~6~${c.commentID}~10~${c.percent}`;
+    });
+
+    const userStrings = comments.map(c => `${c.userID}:${c.userName}:0`);
+
+    const response = commentStrings.join('|') + '#' + userStrings.join('|') + `#${totalComments}:${offset}:${comments.length}`;
+    
+    res.send(response);
+  } catch (error) {
+    console.error('error getting comments:', error);
+    res.send('-1');
+  }
+});
+
+app.post('*splat/database/likeGJItem.php', (req, res) => {
+  try {
+    const { itemID, levelID, type, like } = req.body;
+    
+    const actualItemID = levelID || itemID;
+    const actualType = levelID ? 1 : (parseInt(type) || 1);
+    const isLike = parseInt(like) !== undefined ? parseInt(like) : 1;
+    
+    if (!actualItemID) {
+      console.log('missing itemID/levelID');
+      res.send('-1');
+      return;
+    }
+
+    console.log(`liking item ${actualItemID} (type: ${actualType}, like: ${isLike})`);
+
+    const ip = '127.0.0.1';
+    
+    const checkStmt = db.prepare(`
+      SELECT COUNT(*) as count 
+      FROM actions_likes 
+      WHERE itemID = ? AND type = ? AND ip = ?
+    `);
+    const existing = checkStmt.get(parseInt(actualItemID), actualType, ip);
+
+    if (existing.count > 2) {
+      console.log('rate limit exceeded for likes');
+      res.send('-1');
+      return;
+    }
+
+    const insertStmt = db.prepare(`
+      INSERT INTO actions_likes (itemID, type, isLike, ip)
+      VALUES (?, ?, ?, ?)
+    `);
+    insertStmt.run(parseInt(actualItemID), actualType, isLike, ip);
+
+    let table, column;
+    switch(actualType) {
+      case 1:
+        table = 'levels';
+        column = 'id';
+        break;
+      case 2:
+        table = 'comments';
+        column = 'commentID';
+        break;
+      default:
+        table = 'levels';
+        column = 'id';
+    }
+
+    const sign = isLike === 1 ? '+' : '-';
+    const updateStmt = db.prepare(`UPDATE ${table} SET likes = likes ${sign} 1 WHERE ${column} = ?`);
+    updateStmt.run(parseInt(actualItemID));
+
+    console.log(`item ${actualItemID} like updated`);
+    res.send('1');
+  } catch (error) {
+    console.error('error liking item:', error);
+    res.send('-1');
   }
 });
 
