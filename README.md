@@ -16,7 +16,7 @@ it uses sqlite3 for its database and i mean i *did* code it in js but the routes
 
 # known issues
 - you cant even delete levels this server SUCKS man
-- pressing the update icon crashes 1.0 (cant tell if this is with the game or server)
+- pressing the update icon crashes the game and subsequently deletes save data (cant tell if this is with the game or server)
 - names show up as "Unknown" on uploaded levels and comments
 - i think difficulty rating is broken aswell
 - ~~likes fom 1.0 and likes from 1.1 clash together as the system changed in 1.1~~ nvm this never even happened
