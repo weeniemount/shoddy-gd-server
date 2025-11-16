@@ -11,6 +11,7 @@ it uses sqlite3 for its database and i mean i *did* code it in js but the routes
 - 1.0
 - 1.1
 - 1.2
+- 1.3
 
 # setting up
 ``git clone`` the repo then run ``npm install`` and then after that run ``node src/geometry.js``
@@ -21,6 +22,7 @@ it uses sqlite3 for its database and i mean i *did* code it in js but the routes
 - ~~names show up as "Unknown" on uploaded levels and comments~~ fixed for both!
 - i think difficulty rating is broken aswell
 - ~~likes fom 1.0 and likes from 1.1 clash together as the system changed in 1.1~~ nvm this never even happened
+- you cant see levels from other users with the see/more button
 
 # credits
 robtop for making the funny cube game
