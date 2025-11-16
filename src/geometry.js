@@ -28,6 +28,7 @@ db.exec(`
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     udid TEXT NOT NULL,
     userName TEXT NOT NULL,
+    userID INTEGER NOT NULL,
     levelName TEXT NOT NULL,
     levelDesc TEXT,
     levelString TEXT NOT NULL,
@@ -77,6 +78,7 @@ db.exec(`
   );
   
   CREATE INDEX IF NOT EXISTS idx_users_extID ON users(extID);
+  CREATE INDEX IF NOT EXISTS idx_levels_userID ON levels(userID);
   CREATE INDEX IF NOT EXISTS idx_userName ON levels(userName);
   CREATE INDEX IF NOT EXISTS idx_udid ON levels(udid);
   CREATE INDEX IF NOT EXISTS idx_levelName_userName ON levels(levelName, userName);
@@ -253,10 +255,11 @@ app.post('*splat/database/uploadGJLevel.php', (req, res) => {
       requestedStars,
       auto,
       ldm,
-      unlisted
+      unlisted,
+      accountID
     } = req.body;
 
-    if (!levelString || !levelName) {
+    if (!levelString || !levelName || !userName) {
       res.send('-1');
       return;
     }
@@ -265,11 +268,14 @@ app.post('*splat/database/uploadGJLevel.php', (req, res) => {
 
     const uploadDate = Math.floor(Date.now() / 1000);
     
+    const extID = accountID || udid || 'guest';
+    const userID = helpers.getUserID(extID, userName);
+    
     const rateLimitCheck = db.prepare(`
       SELECT COUNT(*) as count 
       FROM levels 
-      WHERE userName = ? AND createdAt > ?
-    `).get(userName, uploadDate - 60);
+      WHERE userID = ? AND createdAt > ?
+    `).get(userID, uploadDate - 60);
 
     if (rateLimitCheck.count > 0) {
       console.log(`rate limit hit for user: ${userName}`);
@@ -279,8 +285,8 @@ app.post('*splat/database/uploadGJLevel.php', (req, res) => {
 
     const existingLevel = db.prepare(`
       SELECT id FROM levels 
-      WHERE levelName = ? AND userName = ?
-    `).get(levelName, userName);
+      WHERE levelName = ? AND userID = ?
+    `).get(levelName, userID);
 
     if (existingLevel) {
       const stmt = db.prepare(`
@@ -302,7 +308,7 @@ app.post('*splat/database/uploadGJLevel.php', (req, res) => {
             isLDM = ?,
             unlisted = ?,
             updatedAt = ?
-        WHERE id = ? AND userName = ?
+        WHERE id = ? AND userID = ?
       `);
       
       const result = stmt.run(
@@ -324,7 +330,7 @@ app.post('*splat/database/uploadGJLevel.php', (req, res) => {
         parseInt(unlisted) || 0,
         uploadDate,
         existingLevel.id,
-        userName
+        userID
       );
 
       if (result.changes > 0) {
@@ -336,17 +342,18 @@ app.post('*splat/database/uploadGJLevel.php', (req, res) => {
     } else {
       const stmt = db.prepare(`
         INSERT INTO levels (
-          udid, userName, levelName, levelDesc, levelString,
+          udid, userName, userID, levelName, levelDesc, levelString,
           levelVersion, levelLength, audioTrack, gameVersion,
           password, original, twoPlayer, songID, objects,
           coins, requestedStars, auto, isLDM, unlisted,
           createdAt, updatedAt
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
       
       const result = stmt.run(
-        udid,
+        udid || extID,
         userName,
+        userID,
         levelName,
         levelDesc || '',
         levelString,
@@ -385,7 +392,9 @@ app.post('*splat/database/getGJLevels.php', (req, res) => {
     const limit = 10;
     const offset = pageNum * limit;
 
-    let query = 'SELECT * FROM levels';
+    let query = `SELECT levels.*, users.extID 
+                 FROM levels 
+                 LEFT JOIN users ON levels.userID = users.userID`;
     let params = [];
     let whereClauses = [];
 
@@ -403,7 +412,7 @@ app.post('*splat/database/getGJLevels.php', (req, res) => {
         break;
       case '5':
         if (str) {
-          whereClauses.push('userName = ?');
+          whereClauses.push('levels.userName = ?');
           params.push(str);
         }
         break;
@@ -432,7 +441,7 @@ app.post('*splat/database/getGJLevels.php', (req, res) => {
       query += ' WHERE ' + whereClauses.join(' AND ');
     }
 
-    query += ' ORDER BY id DESC LIMIT ? OFFSET ?';
+    query += ' ORDER BY levels.id DESC LIMIT ? OFFSET ?';
     params.push(limit, offset);
 
     const stmt = db.prepare(query);
@@ -444,10 +453,13 @@ app.post('*splat/database/getGJLevels.php', (req, res) => {
     }
 
     const levelData = levels.map((level) => {
-      return `1:${level.id}:2:${level.levelName}:3:${level.levelDesc || ''}:5:${level.levelVersion}:6:${level.userName}:8:${level.difficulty}:9:${level.levelLength}:10:${level.downloads}:12:${level.audioTrack}:13:${level.gameVersion}:14:${level.likes}:17:${level.demon}:43:${level.demonDifficulty}:25:${level.auto}:18:${level.stars}:19:0:42:0:45:0:15:${level.levelLength}:30:0:31:0:37:0:38:0:39:0:46:1:47:2:40:0:35:0:4:${level.levelString}`;
+      return `1:${level.id}:2:${level.levelName}:3:${level.levelDesc || ''}:5:${level.levelVersion}:6:${level.userID}:8:${level.difficulty}:9:${level.levelLength}:10:${level.downloads}:12:${level.audioTrack}:13:${level.gameVersion}:14:${level.likes}:17:${level.demon}:43:${level.demonDifficulty}:25:${level.auto}:18:${level.stars}:19:0:42:0:45:0:15:${level.levelLength}:30:0:31:0:37:0:38:0:39:0:46:1:47:2:40:0:35:0:4:${level.levelString}`;
     }).join('|');
 
-    const userString = levels.map(level => `1:${level.userName}:2:${level.udid}`).join('|');
+    const userString = levels.map(level => {
+      const extID = (level.extID && !isNaN(level.extID)) ? level.extID : 0;
+      return `${level.userID}:${level.userName}:${extID}`;
+    }).join('|');
 
     const totalCount = db.prepare('SELECT COUNT(*) as count FROM levels').get().count;
     
