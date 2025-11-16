@@ -9,9 +9,13 @@ db.exec(`
     extID TEXT NOT NULL UNIQUE,
     userName TEXT NOT NULL,
     lastPlayed INTEGER DEFAULT (strftime('%s', 'now')),
-    icon INTEGER DEFAULT 0,
+    IP TEXT DEFAULT '',
+    gameVersion INTEGER DEFAULT 1,
+    secret TEXT DEFAULT '',
+    icon INTEGER DEFAULT 1,
     color1 INTEGER DEFAULT 0,
     color2 INTEGER DEFAULT 3,
+    color3 INTEGER DEFAULT 0,
     iconType INTEGER DEFAULT 0,
     special INTEGER DEFAULT 0,
     coins INTEGER DEFAULT 0,
@@ -19,7 +23,21 @@ db.exec(`
     demons INTEGER DEFAULT 0,
     stars INTEGER DEFAULT 0,
     creatorPoints INTEGER DEFAULT 0,
-    diamonds INTEGER DEFAULT 0
+    diamonds INTEGER DEFAULT 0,
+    moons INTEGER DEFAULT 0,
+    accIcon INTEGER DEFAULT 1,
+    accShip INTEGER DEFAULT 1,
+    accBall INTEGER DEFAULT 1,
+    accBird INTEGER DEFAULT 1,
+    accDart INTEGER DEFAULT 1,
+    accRobot INTEGER DEFAULT 1,
+    accGlow INTEGER DEFAULT 0,
+    accSpider INTEGER DEFAULT 1,
+    accExplosion INTEGER DEFAULT 1,
+    accSwing INTEGER DEFAULT 1,
+    accJetpack INTEGER DEFAULT 1,
+    isBanned INTEGER DEFAULT 0,
+    isCreatorBanned INTEGER DEFAULT 0
   );
 
   CREATE TABLE IF NOT EXISTS levels (

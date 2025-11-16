@@ -4,6 +4,7 @@ import db from './db.js'
 
 import itemRouter from './routes/item.js';
 import levelRouter from './routes/level.js';
+import scoreRouter from './routes/score.js';
 
 const app = express();
 
@@ -12,6 +13,7 @@ app.use(express.urlencoded({ extended: true }));
 
 app.use("/", itemRouter);
 app.use("/", levelRouter);
+app.use("/", scoreRouter);
 
 app.get('/api/level/:id', (req, res) => {
   try {
