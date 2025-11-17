@@ -189,4 +189,63 @@ itemRouter.post('*splat/database/likeGJItem.php', (req, res) => {
   }
 });
 
+itemRouter.post('*splat/database/rateGJStars.php', (req, res) => {
+  try {
+    const { levelID, stars, rating, gjp, gjp2, secret } = req.body;
+    
+    const starCount = parseInt(stars || rating);
+    
+    if (!levelID || (!stars && !rating)) {
+      console.log('missing required fields for rating (levelID and stars/rating)');
+      console.log('received:', req.body);
+      res.send('-1');
+      return;
+    }
+
+    const levelId = parseInt(levelID);
+
+    console.log(`rating level ${levelId} with ${starCount} stars`);
+
+    const diffData = helpers.getDiffFromStars(starCount);
+
+    const checkStmt = db.prepare('SELECT id FROM levels WHERE id = ?');
+    const levelExists = checkStmt.get(levelId);
+
+    if (!levelExists) {
+      console.log(`level ${levelId} not found`);
+      res.send('-1');
+      return;
+    }
+
+    const updateStmt = db.prepare(`
+      UPDATE levels 
+      SET stars = ?,
+          difficulty = ?,
+          auto = ?,
+          demon = ?,
+          demonDifficulty = 0
+      WHERE id = ?
+    `);
+
+    const result = updateStmt.run(
+      starCount,
+      diffData.diff,
+      diffData.auto,
+      diffData.demon,
+      levelId
+    );
+
+    if (result.changes > 0) {
+      console.log(`level ${levelId} rated: ${diffData.name} (${starCount} stars)`);
+      res.send('1');
+    } else {
+      console.log(`failed to update level ${levelId}`);
+      res.send('-1');
+    }
+  } catch (error) {
+    console.error('error rating level:', error);
+    res.send('-1');
+  }
+});
+
 export default itemRouter;
